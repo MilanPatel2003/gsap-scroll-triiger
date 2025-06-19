@@ -38,8 +38,10 @@ function setFullscreenVideoMode(fullscreen) {
 function drawDoorWithVideoBackground() {
   if (!images[currentFrame - 1] || !images[currentFrame - 1].complete) return;
   
-  // Clear canvas
+  // Clear canvas with black background
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   
   const img = images[currentFrame - 1];
   const doorW = img.width * doorScale;
@@ -47,69 +49,59 @@ function drawDoorWithVideoBackground() {
   const x = (canvas.width - doorW) / 2;
   const y = (canvas.height - doorH) / 2;
 
-  // Step 1: Fill canvas with black background
-  ctx.fillStyle = '#000000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Save the current state
+  ctx.save();
 
-  // Step 2: Create mask from door image to identify transparent areas
-  const maskCanvas = document.createElement('canvas');
-  const maskCtx = maskCanvas.getContext('2d');
-  maskCanvas.width = canvas.width;
-  maskCanvas.height = canvas.height;
+  // Step 1: Create a clipping mask from the door's transparent areas
+  // First, we need to identify transparent pixels and create a path
   
-  // Draw door on mask canvas
-  maskCtx.drawImage(img, x, y, doorW, doorH);
+  // Create an off-screen canvas to analyze the door image
+  const tempCanvas = document.createElement('canvas');
+  const tempCtx = tempCanvas.getContext('2d');
+  tempCanvas.width = doorW;
+  tempCanvas.height = doorH;
   
-  // Get image data to identify transparent pixels
-  const maskImageData = maskCtx.getImageData(0, 0, canvas.width, canvas.height);
-  const maskData = maskImageData.data;
+  // Draw the door image to analyze its pixels
+  tempCtx.drawImage(img, 0, 0, doorW, doorH);
+  const imageData = tempCtx.getImageData(0, 0, doorW, doorH);
+  const data = imageData.data;
 
-  // Step 3: Create video background canvas
-  const videoCanvas = document.createElement('canvas');
-  const videoCtx = videoCanvas.getContext('2d');
-  videoCanvas.width = canvas.width;
-  videoCanvas.height = canvas.height;
+  // Create clipping path for transparent areas (glass panels)
+  ctx.beginPath();
   
-  // Draw scaled video
-  videoCtx.save();
-  videoCtx.translate(canvas.width / 2, canvas.height / 2);
-  videoCtx.scale(videoScale, videoScale);
-  videoCtx.translate(-canvas.width / 2, -canvas.height / 2);
-  videoCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  videoCtx.restore();
-
-  // Step 4: Draw video only where door is transparent (glass panels)
-  const videoImageData = videoCtx.getImageData(0, 0, canvas.width, canvas.height);
-  const videoData = videoImageData.data;
-  const resultImageData = ctx.createImageData(canvas.width, canvas.height);
-  const resultData = resultImageData.data;
-
-  // Process each pixel
-  for (let i = 0; i < maskData.length; i += 4) {
-    const alpha = maskData[i + 3]; // Alpha channel of door image
-    
-    if (alpha < 128) { // Transparent or semi-transparent areas (glass panels)
-      // Show video
-      resultData[i] = videoData[i];         // Red
-      resultData[i + 1] = videoData[i + 1]; // Green
-      resultData[i + 2] = videoData[i + 2]; // Blue
-      resultData[i + 3] = 255;              // Full opacity
-    } else {
-      // Solid door areas - keep black
-      resultData[i] = 0;     // Red
-      resultData[i + 1] = 0; // Green
-      resultData[i + 2] = 0; // Blue
-      resultData[i + 3] = 255; // Full opacity
+  // Scan for transparent pixels and create rectangles for them
+  const transparentRegions = [];
+  const threshold = 50; // Alpha threshold for transparency
+  
+  for (let py = 0; py < doorH; py += 2) { // Skip every other pixel for performance
+    for (let px = 0; px < doorW; px += 2) {
+      const index = (py * doorW + px) * 4;
+      const alpha = data[index + 3];
+      
+      if (alpha < threshold) {
+        // This pixel is transparent, add it to our clipping region
+        ctx.rect(x + px, y + py, 2, 2);
+      }
     }
   }
+  
+  // Apply the clipping mask
+  ctx.clip();
 
-  // Step 5: Draw the processed background
-  ctx.putImageData(resultImageData, 0, 0);
+  // Step 2: Draw the video only in the clipped areas (glass panels)
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.scale(videoScale, videoScale);
+  ctx.translate(-canvas.width / 2, -canvas.height / 2);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
 
-  // Step 6: Draw the door frame on top with opacity
+  // Restore to remove clipping
+  ctx.restore();
+
+  // Step 3: Draw the door frame on top
   ctx.save();
   ctx.globalAlpha = doorOpacity;
-  ctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(img, x, y, doorW, doorH);
   ctx.restore();
 }

@@ -40,10 +40,6 @@ function drawMaskedDoor() {
   if (!images[currentFrame - 1] || !images[currentFrame - 1].complete) return;
   
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
-  // Fill background with black
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const img = images[currentFrame - 1];
   const doorW = img.width * doorScale;
@@ -51,10 +47,22 @@ function drawMaskedDoor() {
   const x = (canvas.width - doorW) / 2;
   const y = (canvas.height - doorH) / 2;
 
-  // Create the masking effect - video only shows through door opening
+  // Step 1: Fill background with black
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Step 2: Draw the door image first (this will be our mask)
   ctx.save();
+  ctx.drawImage(img, x, y, doorW, doorH);
   
-  // First, draw the video scaled and positioned
+  // Step 3: Use source-atop to only draw video where door pixels exist
+  // But we want the OPPOSITE - video only where door is transparent
+  // So we'll use destination-out to cut out the door shape, leaving only the opening
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.drawImage(img, x, y, doorW, doorH);
+  
+  // Step 4: Now draw the video, but only in the areas that are left (the door opening)
+  ctx.globalCompositeOperation = 'destination-over';
   ctx.save();
   ctx.translate(canvas.width / 2, canvas.height / 2);
   ctx.scale(videoScale, videoScale);
@@ -62,15 +70,11 @@ function drawMaskedDoor() {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   ctx.restore();
   
-  // Use the door image as a mask - only show video through transparent parts
-  ctx.globalCompositeOperation = 'destination-in';
-  ctx.drawImage(img, x, y, doorW, doorH);
-  
-  // Reset composite operation
+  // Step 5: Reset and draw the door frame on top
   ctx.globalCompositeOperation = 'source-over';
   ctx.restore();
 
-  // Draw the door frame/border on top with opacity
+  // Draw the door frame with opacity
   ctx.save();
   ctx.globalAlpha = doorOpacity;
   ctx.drawImage(img, x, y, doorW, doorH);
@@ -104,10 +108,10 @@ for (let i = 1; i <= frameCount; i++) {
 function updateByScroll(progress) {
   // Door frame
   const frame = Math.round(progress * (frameCount - 1)) + 1;
-  // Door scale: from 1 (start) to 1.2 (end) - reduced scaling
+  // Door scale: from 1 (start) to 1.2 (end)
   doorScale = 1 + 0.2 * progress;
-  // Door opacity: keep door frame visible longer, only fade at very end
-  doorOpacity = progress < 0.95 ? 1 : 1 - (progress - 0.95) * 20;
+  // Door opacity: keep door frame visible, fade out near end
+  doorOpacity = progress < 0.9 ? 1 : 1 - (progress - 0.9) * 10;
   // Video scale: slight zoom as door opens
   videoScale = 1 + 0.3 * progress;
   
@@ -129,7 +133,7 @@ video.addEventListener('loadeddata', () => {
     console.error('Video play failed', e);
   });
 
-  // Door animation - only go fullscreen at the very end
+  // Door animation
   ScrollTrigger.create({
     trigger: '.container',
     start: 'top top',
@@ -137,8 +141,8 @@ video.addEventListener('loadeddata', () => {
     scrub: 1,
     onUpdate: (self) => {
       updateByScroll(self.progress);
-      // Only show fullscreen video at the very end (99.5% scroll)
-      if (self.progress > 0.995) {
+      // Only show fullscreen video at the very end
+      if (self.progress > 0.98) {
         setFullscreenVideoMode(true);
       } else {
         setFullscreenVideoMode(false);
@@ -155,7 +159,7 @@ video.addEventListener('loadeddata', () => {
   // Animate video in fullscreen when door is completely open
   ScrollTrigger.create({
     trigger: '.container',
-    start: '99% top',
+    start: '95% top',
     end: 'bottom bottom',
     scrub: 1,
     onEnter: () => {
